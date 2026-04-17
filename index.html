@@ -1,0 +1,87 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>JavaScript Scheduler</title>
+
+    <!-- head -->
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="../js/daypilot-all.min.js?v=2026.2.813"></script>
+    <script src="../js/ical.min.js"></script>
+    <!-- /head -->
+
+</head>
+<body>
+
+<!-- top -->
+<div id="dp"></div>
+
+<script type="text/javascript">
+
+    const startDay = new Date(Date.now() - 21 * 24 * 3600 * 1000).toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
+
+    const resources = [
+        {name: "原神", id: "原神"},
+        {name: "崩坏星穹铁道", id: "崩坏星穹铁道"},
+        {name: "绝区零", id: "绝区零"},
+        {name: "燕云十六声", id: "燕云十六声"}
+    ];
+    const events = [];
+
+    const dp = new DayPilot.Scheduler("dp", {
+        startDate: startDay,
+        days: 80,
+        scale: "Day",
+        timeHeaders: [
+            {groupBy: "Month", format: "MMMM yyyy"},
+            {groupBy: "Day", format: "d"}
+        ],
+        heightSpec: "Max",
+        height: 400,
+        rowMarginTop: 2,
+        rowMarginBottom: 2,
+    });
+
+    dp.init();
+    dp.scrollTo(today);
+
+    const app = {
+        // 从 ICS 文件加载
+        async loadICS(res) {
+            const response = await fetch("../ics/" + res + ".ics");
+            const icsText = await response.text();
+            
+            // 使用 ical.js 解析
+            const jCalData = ICAL.parse(icsText);
+            const comp = new ICAL.Component(jCalData);
+            const vevents = comp.getAllSubcomponents("vevent");
+
+            vevents.forEach(vevent => {
+                const event = new ICAL.Event(vevent);
+                
+                // 转换 ICS 事件为 DayPilot 事件格式
+                events.push({
+                id: event.uid,
+                text: event.summary,
+                start: event.startDate.toJSDate(),
+                end: event.endDate.toJSDate(),
+                resource: res
+                });
+            });
+             dp.update({resources, events});
+        }
+    };
+
+    app.loadICS("原神");
+    app.loadICS("崩坏星穹铁道");
+    app.loadICS("绝区零");
+
+</script>
+
+<!-- /bottom -->
+
+
+</body>
+</html>
+
