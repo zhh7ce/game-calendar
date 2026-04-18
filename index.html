@@ -6,27 +6,73 @@
     <!-- head -->
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script src="../js/daypilot-all.min.js?v=2026.2.813"></script>
-    <script src="../js/ical.min.js"></script>
+    <script src="./js/daypilot-all.min.js?v=2026.2.813"></script>
+    <script src="./js/ical.min.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background-color: #f5f5f5;
+            border-bottom: 1px solid #ddd;
+        }
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            flex: 1;
+            text-align: center;
+        }
+        .buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: 1px solid #ccc;
+            background-color: white;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .btn:hover {
+            background-color: #f0f0f0;
+        }
+        #dp {
+            height: calc(100% - 60px);
+        }
+    </style>
     <!-- /head -->
 
 </head>
 <body>
 
-<!-- top -->
+<!-- header -->
+<div class="header">
+    <h1 class="title">游戏日历</h1>
+    <div class="buttons">
+        <button class="btn" id="resetBtn">重置</button>
+        <button class="btn" id="importBtn">导入</button>
+        <button class="btn" id="exportBtn">导出</button>
+    </div>
+</div>
+
+<!-- calendar -->
 <div id="dp"></div>
 
 <script type="text/javascript">
 
-    const startDay = new Date(Date.now() - 21 * 24 * 3600 * 1000).toISOString().split('T')[0];
+    const startDay = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
 
-    const resources = [
-        {name: "原神", id: "原神"},
-        {name: "崩坏星穹铁道", id: "崩坏星穹铁道"},
-        {name: "绝区零", id: "绝区零"},
-        {name: "燕云十六声", id: "燕云十六声"}
-    ];
+    const games = ["原神", "崩坏星穹铁道", "绝区零", "燕云十六声"];
+    const resources = games.map(game => ({name: game, id: game}));
     const events = [];
 
     const dp = new DayPilot.Scheduler("dp", {
@@ -37,19 +83,102 @@
             {groupBy: "Month", format: "MMMM yyyy"},
             {groupBy: "Day", format: "d"}
         ],
-        heightSpec: "Max",
-        height: 400,
+        heightSpec: "Parent",
         rowMarginTop: 2,
         rowMarginBottom: 2,
+        contextMenu: new DayPilot.Menu({
+            items: [
+                {
+                    text: "Delete",
+                    onClick: (args) => {
+                        dp.events.remove(args.source);
+                        app.addToDeleted(args.source.data.id);
+                    }
+                },
+            ]
+        }),
+        onTimeRangeSelected: async (args) => {
+            const data = {
+                start: args.start,
+                end: args.end,
+                id: DayPilot.guid(),
+                resource: args.resource,
+                text: "New event"
+            };
+            const result = await app.editEvent(data);
+            dp.clearSelection();
+            if (!result) {
+                return;
+            }
+            dp.events.add(result);
+        },
+        onEventClick: async (args) => {
+            const result = await app.editEvent(args.e.data);
+            if (!result) {
+                return;
+            }
+            dp.events.update(result);
+        },
+        onBeforeEventRender: args => {
+            args.data.areas = [
+                {
+                    right: 2,
+                    top: "calc(50% - 9px)",
+                    width: 18,
+                    height: 18,
+                    style: "cursor:pointer;",
+                    backColor: "#cccccc66",
+                    borderRadius: "50%",
+                    padding: 2,
+                    fontColor: "#333333",
+                    symbol: "./icons/daypilot.svg#threedots-h",
+                    action: "ContextMenu",
+                    toolTip: "Menu"
+                }
+            ];
+        },
     });
 
     dp.init();
     dp.scrollTo(today);
 
     const app = {
+        // 从cookie加载已删除事件ID
+        loadDeleted() {
+            const cookie = document.cookie.split(';').find(c => c.trim().startsWith('deletedEvents='));
+            if (cookie) {
+                try {
+                    return new Set(JSON.parse(cookie.split('=')[1]));
+                } catch (e) {
+                    return new Set();
+                }
+            }
+            return new Set();
+        },
+
+        // 保存已删除事件ID到cookie
+        saveDeleted(deletedSet) {
+            const expires = new Date();
+            expires.setFullYear(expires.getFullYear() + 1); // 过期时间设为1年后
+            document.cookie = `deletedEvents=${JSON.stringify([...deletedSet])};expires=${expires.toUTCString()};path=/`;
+        },
+
+        // 添加事件ID到删除列表
+        addToDeleted(id) {
+            const deleted = this.loadDeleted();
+            deleted.add(id);
+            this.saveDeleted(deleted);
+        },
+
+        // 检查事件ID是否已删除
+        isDeleted(id) {
+            const deleted = this.loadDeleted();
+            return deleted.has(id);
+        },
+
         // 从 ICS 文件加载
         async loadICS(res) {
-            const response = await fetch("../ics/" + res + ".ics");
+            const response = await fetch("./ics/" + res + ".ics");
             const icsText = await response.text();
             
             // 使用 ical.js 解析
@@ -59,6 +188,11 @@
 
             vevents.forEach(vevent => {
                 const event = new ICAL.Event(vevent);
+                
+                // 跳过已删除的事件
+                if (this.isDeleted(event.uid)) {
+                    return;
+                }
                 
                 // 转换 ICS 事件为 DayPilot 事件格式
                 events.push({
@@ -70,12 +204,83 @@
                 });
             });
              dp.update({resources, events});
+        },
+
+        // 重置所有cookie
+        reset() {
+            document.cookie = "deletedEvents=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;";
+            location.reload();
+        },
+
+        // 导出删除列表
+        exportDeleted() {
+            const deleted = this.loadDeleted();
+            const data = {
+                version: "1.0",
+                gameCalendar: {
+                    deletedEvents: [...deleted],
+                    exportDate: new Date().toISOString()
+                }
+            };
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'game-calendar-deleted-events.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        },
+
+        // 导入删除列表
+        importDeleted() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = JSON.parse(e.target.result);
+                            if (data.gameCalendar && data.gameCalendar.deletedEvents) {
+                                const deletedSet = new Set(data.gameCalendar.deletedEvents);
+                                this.saveDeleted(deletedSet);
+                                location.reload();
+                            } else {
+                                alert('无效的文件格式');
+                            }
+                        } catch (error) {
+                            alert('文件解析失败：' + error.message);
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            };
+            input.click();
         }
     };
 
-    app.loadICS("原神");
-    app.loadICS("崩坏星穹铁道");
-    app.loadICS("绝区零");
+    // 自动加载所有游戏的 ICS 文件
+    games.forEach(game => app.loadICS(game));
+
+    // 绑定按钮事件
+    document.getElementById('resetBtn').addEventListener('click', () => {
+        if (confirm('确定要重置所有设置吗？这将清除所有已删除的事件记录。')) {
+            app.reset();
+        }
+    });
+
+    document.getElementById('importBtn').addEventListener('click', () => {
+        app.importDeleted();
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', () => {
+        app.exportDeleted();
+    });
 
 </script>
 
