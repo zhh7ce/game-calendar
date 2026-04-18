@@ -1,0 +1,40 @@
+name: Update ICS Feeds
+
+on:
+  schedule:
+    - cron: '0 10 * * 1' # 每周一 10:00 UTC
+
+jobs:
+  download-ics:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download 崩坏星穹铁道 ICS
+        run: |
+          mkdir -p ics
+          curl -L --fail -o ics/崩坏星穹铁道.ics https://cal.trrw.tech/api/崩坏：星穹铁道/活动-时间轴版.ics
+
+      - name: Download 绝区零 ICS
+        run: |
+          mkdir -p ics
+          curl -L --fail -o ics/绝区零.ics https://cal.trrw.tech/api/绝区零/活动-时间轴版.ics
+
+      - name: Download 原神 ICS
+        run: |
+          mkdir -p ics
+          curl -L --fail -o ics/原神.ics https://cal.trrw.tech/api/原神/活动-时间轴版.ics
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ics/崩坏星穹铁道.ics ics/绝区零.ics ics/原神.ics
+          if ! git diff --cached --quiet; then
+            git commit -m "Update ICS feeds"
+            git push
+          else
+            echo "No changes to commit"
+          fi
