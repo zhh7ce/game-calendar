@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   schedule:
     - cron: '0 10 * * 1' # 每周一 10:00 UTC
+  workflow_dispatch: # 允许手动触发
 
 jobs:
   update-ics:
